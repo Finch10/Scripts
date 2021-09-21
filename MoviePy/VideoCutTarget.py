@@ -1,165 +1,172 @@
-'''
-  This script cut video in specific places, and add a part of other video
-  between those. The location of places is getting from a string with 
-  time in hh:mm:ss format, and it convert in seconds.
-'''
+#!pip install selenium
+#!apt-get update # to update ubuntu to correctly run apt install
+#!apt install chromium-chromedriver
+#!cp /usr/lib/chromium-browser/chromedriver /usr/bin
+import sys
+import time
+import requests
+from selenium import webdriver
 
-
-import datetime
+import pandas as pd
+import time
+from selenium.common.exceptions import NoSuchElementException
 import os
-from os.path import join
-import regex as re
-from moviepy.editor import concatenate_videoclips, VideoFileClip, AudioFileClip, vfx
+from PyPDF2 import PdfFileReader
+
+# sys.path.insert(0,'/usr/lib/chromium-browser/chromedriver')
 
 
-class Mixing:
-    def __init__(
-        self,
-        author_path,
-        my_video_path,
-        saving_path,
-        partition,
-        start=0,
-        end=0,
-        mirror=False,
-    ):
-        """
-        The Lyrics constructor
-          :param my_video_path: str
-            My video path
-          :param author_video: str
-            Author's folder path with video
-          :saving_path: str
-            Path where final videos will be saved
-          :partition: str
-            string with timer mark's in video
-          :param start: int
-            The number where to start video
-          :param end: int
-            The number where video ends
-          :mirror: boolean
-            Flag if there is necesary mirror video
-        """
+def wait_get_href() -> tuple:
+    """Returns a tuple with the URL and the name of the document.
+    If there is no file, it returns a tuple with empty variables"""
 
-        # Setting up the parameters.
-        self.__folder_author_path = author_path
-        self.__folder_saving_path = saving_path
-        self.my_video_path = my_video_path
-        self.start = start
-        self.end = end
-        self.partition = self.get_time_marks(partition)
-        self.mirror = mirror
-        self.__filesdir = os.listdir(self.__folder_author_path)
-        self.count = 1
+    #Make 15 attempts to find element with file on page
+    for _ in range(15):
+        try:
+            element = driver.find_element_by_xpath(
+                '//*[@id="contentload"]/table/tbody/tr/td[2]/a[1]'
+            )
+            url = element.get_attribute("href")
+            name = element.text
+            return (url, name)
+        except NoSuchElementException:
+            time.sleep(1.5)
+    #If didn't find anything return str variables with blank values
+    url = ""
+    name = ""
+    return (url, name)
 
-        if os.path.isdir(self.__folder_saving_path) == False:
-            os.mkdir(self.__folder_saving_path)
 
-    def get_time_marks(self, lista):
+def get_number_pages(href):
+    """Gets the url of the file and returns the number of pages"""
 
-        times = re.findall(
-            r"^(?:(\d\d):)?(\d\d):(\d\d(?:\.\d*)?)", lista, re.M)
-        # convert to integers and floats [(0, 0, 0.0), (0, 1, 26.0), ...]
-        times = [(int(h or 0), int(m), float(s or 0)) for h, m, s in times]
-        # convert to timedeltas [timedelta(0), timedelta(0, 86), ...]
-        times = [datetime.timedelta(hours=h, minutes=m, seconds=s)
-                 for h, m, s in times]
-        times = [str(i) for i in times]
-        times = [self.__transform_seconds(i) for i in times]
-        return times
+    driver.get(href)
+    time.sleep(3)
+    pdf_download_icon = driver.find_element_by_xpath(
+        "/html/body/div[1]/div[3]/div[2]/div[2]/div/div/div/div[3]/div[2]/div/a[2]"
+    )
+    # Retrieves the list of source files in the directory to find the file that
+    #will be loaded by getting a new list and deleting the old files
+    precedent_files_list = os.listdir()
+    #Downloading file
+    pdf_download_icon.click()
+    
+    #If the file is too large, the programs will try to get a list of files in the directory
+    # several times to find out if the file has been downloaded
+    #
+    # Variable for counting number of while iterations 
+    counter_while = 0
+    #Variable used to stop iterations
+    flag_while = True
+    while flag_while:
+        #Wait for downloading
+        time.sleep(4)
 
-    def __transform_seconds(self, marker):
-        date_time = datetime.datetime.strptime(marker, "%H:%M:%S")
-        a_timedelta = date_time - datetime.datetime(1900, 1, 1)
-        seconds = a_timedelta.total_seconds()
-        return seconds
+        #Getting new list of files in directory
+        current_files_list = os.listdir()
+        # Identify file that was downloaded
+        new_file = list(set(current_files_list) - set(precedent_files_list))
 
-    def __get_final_video(self, video):
-        stocked = []
+        if new_file:
+            flag_while = False
+        elif counter_while == 5:
+            #Returns number of pages 0 if the file failed to be downloaded    
+            return 0
+        else:
+            #Increase by 1 if the file was not downloaded
+            counter_while += 1
 
-        # Get metadata from initial video
-        durata = video.duration - self.end - 1
-        w = video.w
-        h = video.h
-        fps = video.fps
+    #Extracting name of file from list by it's index
+    new_file = new_file[0]
 
-        # Initialize and apply caracteristics to my video
-        my_video = VideoFileClip(self.my_video_path)
-        my_video = video.resize(height=h, width=w).set_fps(fps)
-        # Mirroring video if it is required
-        if self.mirror == True:
-            video = video.fx(vfx.mirror_x)
+    # opening file and extracting number of pages
+    pdf = PdfFileReader(open(new_file, "rb"))
+    number_pages = pdf.getNumPages()
 
-        # Giving value where video should start
-        back = self.start
-        for i in self.partition:
-            # Get fragment of video
-            clip = video.subclip(back, i)
-            # Append list with this fragment
-            stocked.append(clip)
-            # Append list with my video
-            stocked.append(my_video)
-            back = i
-        clip = video.subclip(self.partition[-1], durata)
-        stocked.append(clip)
-        final_video = concatenate_videoclips(stocked, method="compose")
-        return final_video
+    # Delete downloaded file
+    os.remove(new_file)
+    return number_pages
 
-    def work(self):
-        # Iterating all videos in author's folder
-        for video in self.__filesdir:
-            self.__execution(video)
+def process_excel(list_documents):
+    """Retrieves a list of documents and returns the name, URL, page numbers 
+    and returns a dictionary with this data"""
 
-    def __execution(self, video):
-        # Get path to the video
-        path = join(self.__folder_author_path, video)
+    #Store the data in the dictionary for further creation of the csv table 
+     processed_data = {
+        "Denumire": [],
+        "Numar": [],
+        "Data": [],
+        "URL": [],
+        "Number of Pages": [],
+    }
 
-        # Initialize video with moviepy
-        proto_video = VideoFileClip(path)
-        # Get processed video
-        final_video = self.__get_final_video(proto_video)
-        # Create saving path
-        saving_path = join(self.__folder_saving_path, video)
-        # Save video
-        final_video.write_videofile(saving_path[:-3] + "mp4")
-        # Delete old video
-        os.remove(path)
+    #Creates a variable to count the total number of pages
+    total_number_pages = 0
+    #Iterate throw excel file with initial documents
+    for number, data in list_documents:
 
-    def work_audio(self, path_to_audio):
-        # Iterating all videos in author's folder
-        for video in self.__filesdir:
-            # Get path to the video
-            path_v = join(self.__folder_author_path, video)
-            # Get path to the audio
-            path_a = join(path_to_audio, video[:-3] + "mp3")
-            # Get processed video
-            proto_video = VideoFileClip(path_v)
-            # Get processed audio
-            proto_audio = AudioFileClip(path_a).subclip(
-                0, proto_video.duration - 1)
-            # Set audio to video
-            proto_video = proto_video.set_audio(proto_audio)
-            # Get processed video
-            final_video = self.__get_final_video(proto_video)
-            # Create saving path
-            saving_path = join(self.__folder_saving_path, video)
-            # Save video
-            final_video.write_videofile(saving_path[:-3] + "mp4")
-            # Delete old video and audio
-            os.remove(path_v)
-            os.remove(path_a)
+        driver.get("https://www.legis.md/")
+        nr_doc_tag = driver.find_element_by_id("nr_doc")
+
+        nr_doc_tag.click()
+        nr_doc_tag.send_keys(number)
+
+        data_doc_tag = driver.find_element_by_id("datepicker1")
+        data_doc_tag.click()
+        data_doc_tag.send_keys(data)
+
+        search_button = driver.find_element_by_class_name("glyphicon-search")
+        search_button.click()
+
+        #Search for document
+        href, name = wait_get_href()
+        if href:
+            number_pages = get_number_pages(href)
+            total_number_pages += number_pages
+        else:
+            number_pages = ""
+
+        processed_data["Denumire"].append(name)
+        processed_data["Numar"].append(number)
+        processed_data["Data"].append(data)
+         processed_data["URL"].append(href)
+         processed_data["Number of Pages"].append(number_pages)
+
+    #Adding row with total value and blank data to otherses 
+     processed_data["Denumire"].append("")
+     processed_data["Denumire"].append("Total")
+     processed_data["Number of Pages"].append("")
+     processed_data["Number of Pages"].append(total_number_pages)
+     processed_data["Numar"].append("")
+     processed_data["Numar"].append("")
+     processed_data["Data"].append("")
+     processed_data["Data"].append("")
+     processed_data["URL"].append("")
+     processed_data["URL"].append("")
+
+    return processed_data
 
 
 def main():
-    partition = open("VideoCutTarget.txt")
-    First = Mixing(
-        author_path="/content/drive/MyDrive/directory",
-        my_video_path="/content/drive/MyDrive/Copy of Pixel Restauration.mp4",
-        saving_path="/content/drive/MyDrive",
-        partition=partition,
-    )
-    First.work()
+
+    # Setting up Selenium
+    chrome_options = webdriver.ChromeOptions()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    driver = webdriver.Chrome("chromedriver", chrome_options=chrome_options)
 
 
-if __name__ == "__main__":
+    # Importing data from excel
+    df = pd.read_excel("/content/drive/MyDrive/Documente/Lista cu documente/Lista 1.xlsx")
+    # Transform in massive for better use
+    list_documents = df.values
+    processed_data = process_excel(list_documents)
+    #Save data in csv file
+    df_with_href = pd.DataFrame.from_dict(processed_data)
+    df_with_href.to_csv("/content/drive/MyDrive/Documente/Documente prelucrate/1lista.csv")
+
+    return None
+
+if __name__ == __main__:
     main()
