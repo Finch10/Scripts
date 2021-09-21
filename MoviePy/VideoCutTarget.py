@@ -1,3 +1,5 @@
+'''This script gets data about files from Excel and saves information about them in csv format '''
+
 #!pip install selenium
 #!apt-get update # to update ubuntu to correctly run apt install
 #!apt install chromium-chromedriver
@@ -165,8 +167,6 @@ def main():
     #Save data in csv file
     df_with_href = pd.DataFrame.from_dict(processed_data)
     df_with_href.to_csv("/content/drive/MyDrive/Documente/Documente prelucrate/1lista.csv")
-
-    return None
 
 if __name__ == __main__:
     main()
