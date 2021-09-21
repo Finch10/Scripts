@@ -8,9 +8,8 @@
 import datetime
 import os
 from os.path import join
-
-import request
-from moviepy.editor import *
+import regex as re
+from moviepy.editor import concatenate_videoclips, VideoFileClip, AudioFileClip, vfx
 
 
 class Mixing:
@@ -58,11 +57,13 @@ class Mixing:
 
     def get_time_marks(self, lista):
 
-        times = re.findall(r"^(?:(\d\d):)?(\d\d):(\d\d(?:\.\d*)?)", lista, re.M)
+        times = re.findall(
+            r"^(?:(\d\d):)?(\d\d):(\d\d(?:\.\d*)?)", lista, re.M)
         # convert to integers and floats [(0, 0, 0.0), (0, 1, 26.0), ...]
         times = [(int(h or 0), int(m), float(s or 0)) for h, m, s in times]
         # convert to timedeltas [timedelta(0), timedelta(0, 86), ...]
-        times = [datetime.timedelta(hours=h, minutes=m, seconds=s) for h, m, s in times]
+        times = [datetime.timedelta(hours=h, minutes=m, seconds=s)
+                 for h, m, s in times]
         times = [str(i) for i in times]
         times = [self.__transform_seconds(i) for i in times]
         return times
@@ -134,7 +135,8 @@ class Mixing:
             # Get processed video
             proto_video = VideoFileClip(path_v)
             # Get processed audio
-            proto_audio = AudioFileClip(path_a).subclip(0, proto_video.duration - 1)
+            proto_audio = AudioFileClip(path_a).subclip(
+                0, proto_video.duration - 1)
             # Set audio to video
             proto_video = proto_video.set_audio(proto_audio)
             # Get processed video
